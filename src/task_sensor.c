@@ -39,6 +39,8 @@ SYSTEM_TASK(TASK_SENSOR) {
     // Configuración del termistor
     therm_t t1;
     ESP_ERROR_CHECK(therm_init(&t1, ADC_UNIT_1, ADC_CHANNEL_6, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    therm_t t2;
+    ESP_ERROR_CHECK(therm_init(&t2, ADC_UNIT_2, ADC_CHANNEL_7, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
 
     // Inicializa el semáforo (la estructura del manejador se definió globalmente)
     semSample = xSemaphoreCreateBinary();
@@ -55,9 +57,9 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Variables para reutilizar en el bucle
     void* ptr;
-    float temperature;
-    float voltage;
-    uint16_t lsb;
+    float temperature1, temperature2;
+    float voltage1, voltage2;
+    uint16_t lsb1, lsb2;
 
     // Loop
     TASK_LOOP() {
@@ -66,10 +68,15 @@ SYSTEM_TASK(TASK_SENSOR) {
         // en tareas periódicas cuyo periodo es conocido.
         if (xSemaphoreTake(semSample, ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS)) {
             // Lectura del sensor
-            temperature = therm_read_temperature(t1);
-            voltage = therm_read_voltage(t1);
-            lsb = therm_read_lsb(t1);
-            ESP_LOGI(TAG, "Temperatura: %f, Voltaje: %f, LSB: %d", temperature, voltage, lsb);
+            temperature1 = therm_read_temperature(t1);
+            voltage1 = therm_read_voltage(t1);
+            lsb1 = therm_read_lsb(t1);
+            ESP_LOGI(TAG, "Temperatura 1: %f, Voltaje 1: %f, LSB 1: %d", temperature1, voltage1, lsb1);
+
+            temperature2 = therm_read_temperature(t2);
+            voltage2 = therm_read_voltage(t2);
+            lsb2 = therm_read_lsb(t2);
+            ESP_LOGI(TAG, "Temperatura 2: %f, Voltaje 2: %f, LSB 2: %d", temperature2, voltage2, lsb2);
 
             // Uso del buffer cíclico entre la tarea monitor y sensor. Ver documentación en ESP-IDF
             // Pide al RingBuffer espacio para escribir un float.
@@ -81,7 +88,8 @@ SYSTEM_TASK(TASK_SENSOR) {
                 // Si xRingbufferSendAcquire tiene éxito, podemos escribir el número de bytes solicitados
                 // en el puntero ptr. El espacio asignado estará bloqueado para su lectura hasta que
                 // se notifique que se ha completado la escritura
-                memcpy(ptr, &temperature, sizeof(float));
+                memcpy(ptr, &temperature1, sizeof(float));
+                memcpy((float*)ptr + 1, &temperature2, sizeof(float));
 
                 // Se notifica que la escritura ha completado.
                 xRingbufferSendComplete(*rbuf, ptr);
