@@ -38,9 +38,9 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Configuración del termistor
     therm_t t1;
-    ESP_ERROR_CHECK(therm_init(&t1, ADC_UNIT_1, ADC_CHANNEL_6, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_6, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
     therm_t t2;
-    ESP_ERROR_CHECK(therm_init(&t2, ADC_UNIT_2, ADC_CHANNEL_7, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    ESP_ERROR_CHECK(therm_init(&t2, ADC_CHANNEL_7, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
 
     // Inicializa el semáforo (la estructura del manejador se definió globalmente)
     semSample = xSemaphoreCreateBinary();
@@ -71,16 +71,14 @@ SYSTEM_TASK(TASK_SENSOR) {
             temperature1 = therm_read_temperature(t1);
             voltage1 = therm_read_voltage(t1);
             lsb1 = therm_read_lsb(t1);
-            ESP_LOGI(TAG, "Temperatura 1: %f, Voltaje 1: %f, LSB 1: %d", temperature1, voltage1, lsb1);
 
             temperature2 = therm_read_temperature(t2);
             voltage2 = therm_read_voltage(t2);
             lsb2 = therm_read_lsb(t2);
-            ESP_LOGI(TAG, "Temperatura 2: %f, Voltaje 2: %f, LSB 2: %d", temperature2, voltage2, lsb2);
 
             // Uso del buffer cíclico entre la tarea monitor y sensor. Ver documentación en ESP-IDF
             // Pide al RingBuffer espacio para escribir un float.
-            if (xRingbufferSendAcquire(*rbuf, &ptr, sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
+            if (xRingbufferSendAcquire(*rbuf, &ptr, 2 * sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
                 // Si falla la reserva de memoria, notifica la pérdida del dato. Esto ocurre cuando
                 // una tarea productora es mucho más rápida que la tarea consumidora. Aquí no debe ocurrir.
                 ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf));
