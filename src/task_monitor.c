@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 // libc
+#include <math.h>
 #include <stdio.h>
 #include <sys/time.h>
 #include <time.h>
@@ -60,7 +61,10 @@ SYSTEM_TASK(TASK_MONITOR) {
             // ESP_LOGI(TAG,"Recibidos: %d bytes", length);
             v1 = *((float *)ptr);
             v2 = *((float *)ptr + 1);
-            ESP_LOGI(TAG, "T1:%.5f, T2:%.5f", v1, v2);
+
+            float deviation = fabsf((v1 - v2) / v2 * 100.0f);
+
+            ESP_LOGI(TAG, "T1:%.5fºC, (%.2f%%)", v1, deviation);
             vRingbufferReturnItem(*rbuf, ptr);
         } else {
             ESP_LOGW(TAG, "Esperando datos ...");
