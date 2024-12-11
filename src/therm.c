@@ -1,6 +1,7 @@
 
 #include "therm.h"
 
+#include <driver/gpio.h>
 #include <math.h>
 
 #include "config.h"
@@ -9,7 +10,7 @@
 static adc_oneshot_unit_handle_t shared_adc_hdlr = NULL;
 static bool adc_initialized = false;
 
-esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel,
+esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t power_gpio,
                      float series_resistance, float nominal_resistance,
                      float nominal_temperature, float beta_coefficient) {
     // Initialize ADC only once
@@ -21,10 +22,18 @@ esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel,
         ESP_ERROR_CHECK(adc_oneshot_new_unit(&unit_cfg, &shared_adc_hdlr));
         adc_initialized = true;
     }
+    // Configure GPIO for power control
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << power_gpio),
+        .mode = GPIO_MODE_OUTPUT,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
 
     // Configure thermistor
     thermistor->adc_hdlr = shared_adc_hdlr;
     thermistor->adc_channel = channel;
+    thermistor->power_gpio = power_gpio;
     thermistor->series_resistance = series_resistance;
     thermistor->nominal_resistance = nominal_resistance;
     thermistor->nominal_temperature = nominal_temperature;
@@ -57,6 +66,15 @@ uint16_t therm_read_lsb(therm_t thermistor) {
     int raw_value = 0;
     ESP_ERROR_CHECK(adc_oneshot_read(thermistor.adc_hdlr, thermistor.adc_channel, &raw_value));
     return raw_value;
+}
+
+void therm_power_on(therm_t thermistor) {
+    gpio_set_level(thermistor.power_gpio, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));  // Allow settling time
+}
+
+void therm_power_off(therm_t thermistor) {
+    gpio_set_level(thermistor.power_gpio, 0);
 }
 
 // Convierte el voltaje a temperatura en grados Celsius
