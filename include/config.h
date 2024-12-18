@@ -80,4 +80,7 @@ typedef struct
 // Tamaño de la pila de la tarea
 #define TASK_MONITOR_STACK_SIZE 4096
 
+// Definición de los pines GPIO
+#define THERM1_POWER_GPIO GPIO_NUM_4
+#define THERM2_POWER_GPIO GPIO_NUM_5
 #endif
