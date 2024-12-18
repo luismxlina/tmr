@@ -1,19 +1,19 @@
-
 #include "therm.h"
 
+#include <driver/adc.h>
 #include <driver/gpio.h>
 #include <math.h>
 
 #include "config.h"
 
-// Static ADC handle shared by all thermistors
+// Manejador ADC estático compartido por todos los termistores
 static adc_oneshot_unit_handle_t shared_adc_hdlr = NULL;
 static bool adc_initialized = false;
 
 esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t power_gpio,
                      float series_resistance, float nominal_resistance,
                      float nominal_temperature, float beta_coefficient) {
-    // Initialize ADC only once
+    // Inicializa el ADC solo una vez
     if (!adc_initialized) {
         adc_oneshot_unit_init_cfg_t unit_cfg = {
             .unit_id = THERMISTOR_ADC_UNIT,
@@ -22,7 +22,7 @@ esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t powe
         ESP_ERROR_CHECK(adc_oneshot_new_unit(&unit_cfg, &shared_adc_hdlr));
         adc_initialized = true;
     }
-    // Configure GPIO for power control
+    // Configura el GPIO para el control de energía
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << power_gpio),
         .mode = GPIO_MODE_OUTPUT,
@@ -30,7 +30,7 @@ esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t powe
     };
     ESP_ERROR_CHECK(gpio_config(&io_conf));
 
-    // Configure thermistor
+    // Configura el termistor
     thermistor->adc_hdlr = shared_adc_hdlr;
     thermistor->adc_channel = channel;
     thermistor->power_gpio = power_gpio;
@@ -39,7 +39,7 @@ esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t powe
     thermistor->nominal_temperature = nominal_temperature;
     thermistor->beta_coefficient = beta_coefficient;
 
-    // Configure ADC channel
+    // Configura el canal ADC
     adc_oneshot_chan_cfg_t channel_cfg = {
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_12,
@@ -48,6 +48,7 @@ esp_err_t therm_init(therm_t* thermistor, adc_channel_t channel, gpio_num_t powe
 
     return ESP_OK;
 }
+
 // Lee la temperatura del termistor
 float therm_read_temperature(therm_t thermistor) {
     uint16_t lsb = therm_read_lsb(thermistor);
@@ -70,7 +71,7 @@ uint16_t therm_read_lsb(therm_t thermistor) {
 
 void therm_power_on(therm_t thermistor) {
     gpio_set_level(thermistor.power_gpio, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));  // Allow settling time
+    vTaskDelay(pdMS_TO_TICKS(10));  // Permite tiempo de estabilización
 }
 
 void therm_power_off(therm_t thermistor) {
