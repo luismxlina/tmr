@@ -38,9 +38,13 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Configuración del termistor
     therm_t t1;
-    ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_6, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_6, THERM1_POWER_GPIO,
+                               SERIES_RESISTANCE, NOMINAL_RESISTANCE,
+                               NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
     therm_t t2;
-    ESP_ERROR_CHECK(therm_init(&t2, ADC_CHANNEL_7, SERIES_RESISTANCE, NOMINAL_RESISTANCE, NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    ESP_ERROR_CHECK(therm_init(&t2, ADC_CHANNEL_7, THERM2_POWER_GPIO,
+                               SERIES_RESISTANCE, NOMINAL_RESISTANCE,
+                               NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
 
     // Inicializa el semáforo (la estructura del manejador se definió globalmente)
     semSample = xSemaphoreCreateBinary();
