@@ -71,6 +71,9 @@ SYSTEM_TASK(TASK_SENSOR) {
         // el sistema se reinicia por seguridad. Este mecanismo de watchdog software es útil
         // en tareas periódicas cuyo periodo es conocido.
         if (xSemaphoreTake(semSample, ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS)) {
+            therm_power_on(t1);
+            therm_power_on(t2);
+
             // Lectura del sensor
             temperature1 = therm_read_temperature(t1);
             voltage1 = therm_read_voltage(t1);
@@ -79,6 +82,9 @@ SYSTEM_TASK(TASK_SENSOR) {
             temperature2 = therm_read_temperature(t2);
             voltage2 = therm_read_voltage(t2);
             lsb2 = therm_read_lsb(t2);
+
+            therm_power_off(t1);
+            therm_power_off(t2);
 
             // Uso del buffer cíclico entre la tarea monitor y sensor. Ver documentación en ESP-IDF
             // Pide al RingBuffer espacio para escribir un float.
@@ -90,6 +96,13 @@ SYSTEM_TASK(TASK_SENSOR) {
                 // Si xRingbufferSendAcquire tiene éxito, podemos escribir el número de bytes solicitados
                 // en el puntero ptr. El espacio asignado estará bloqueado para su lectura hasta que
                 // se notifique que se ha completado la escritura
+                // float* data_ptr = (float*)ptr;
+                // data_ptr[0] = temperature1;
+                // data_ptr[1] = temperature2;
+                // data_ptr[2] = voltage1;
+                // data_ptr[3] = voltage2;
+                // data_ptr[4] = (float)lsb1;
+                // data_ptr[5] = (float)lsb2;
                 memcpy(ptr, &temperature1, sizeof(float));
                 memcpy((float*)ptr + 1, &temperature2, sizeof(float));
 

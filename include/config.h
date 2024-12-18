@@ -81,6 +81,6 @@ typedef struct
 #define TASK_MONITOR_STACK_SIZE 4096
 
 // Definición de los pines GPIO
-#define THERM1_POWER_GPIO GPIO_NUM_4
-#define THERM2_POWER_GPIO GPIO_NUM_5
+#define THERM1_POWER_GPIO GPIO_NUM_25
+#define THERM2_POWER_GPIO GPIO_NUM_26
 #endif
