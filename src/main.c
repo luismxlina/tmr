@@ -4,41 +4,38 @@
  * DESCRIPTION :
  *
  * PUBLIC LICENSE :
- * Este código es de uso público y libre de modificar bajo los términos de la
- * Licencia Pública General GNU (GPL v3) o posterior. Se proporciona "tal cual",
- * sin garantías de ningún tipo.
+ * This code is public and free to modify under the terms of the
+ * GNU General Public License (GPL v3) or later. It is provided "as is",
+ * without warranties of any kind.
  *
  * AUTHOR :   Dr. Fernando Leon (fernando.leon@uco.es) University of Cordoba
  ******************************************************************************/
 
-// libc
+// Standard headers
 #include <assert.h>
 #include <stdio.h>
 
-// freertos
+// FreeRTOS headers
 #include <freertos/FreeRTOS.h>
 #include <freertos/ringbuf.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
-// esp-idf
+// ESP-IDF headers
 #include <esp_event.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
 
-// propias
+// Project headers
 #include "config.h"
+#include "data_structures.h"
 #include "system.h"
 
 static const char *TAG = "STF_P1:main";
 
-// Punto de entrada
+// Entry point
 void app_main(void) {
-    // Crea una instancia de máquina de estados (ver system.h). Le asigna un nombre
-    // registra todos los estados de la máquina, especificando cuál es el estado de partida.
-    // Nuestra máquina de estados solo tiene dos; INIT: un estado transitorio de inicialización de
-    // los procesos sensor y monitor (un productor y un consumidor); y SENSOR_LOOP: un estado estacionario
-    // en el que se queda idefinidamente una vez todo está funcionando.
+    // Create a system instance and register states
     system_t sys_stf_p1;
     ESP_LOGI(TAG, "Starting STF_P1 system");
     system_create(&sys_stf_p1, SYS_NAME);
@@ -46,69 +43,85 @@ void app_main(void) {
     system_register_state(&sys_stf_p1, SENSOR_LOOP);
     system_set_default_state(&sys_stf_p1, INIT);
 
-    // Define manejadores de tareas (de momento sin asignar)
+    // Define task handles
     system_task_t task_sensor;
+    system_task_t task_checker;
     system_task_t task_monitor;
 
-    // Define y crea un buffer cíclico (ver documentación de ESP-IDF)
-    // a modo de buffer thread-safe entre tareas.
-    RingbufHandle_t rbuf;
-    rbuf = xRingbufferCreate(BUFFER_SIZE, BUFFER_TYPE);
+    // Create ring buffers for inter-task communication
+    // Ring buffer between Sensor/Monitor and Checker/Monitor
+    RingbufHandle_t monitor_buf = xRingbufferCreate(BUFFER_SIZE, BUFFER_TYPE);
+    // Ring buffer between Sensor and Checker tasks
+    RingbufHandle_t checker_buf = xRingbufferCreate(BUFFER_SIZE, BUFFER_TYPE);
 
-    // variable para códigos de retorno
+    // Check if ring buffers were created successfully
+    if (monitor_buf == NULL || checker_buf == NULL) {
+        ESP_LOGE(TAG, "Failed to create ring buffers");
+        return;
+    }
+
+    // Variable for return codes
     esp_err_t ret;
 
-    // A partir de aquí se establece el código de la máquina de estados,
-    // las macros que se utilizan aquí están definidas en system.h/c
+    // State machine
     STATE_MACHINE(sys_stf_p1) {
         STATE_MACHINE_BEGIN();
+
         STATE(INIT) {
             STATE_BEGIN();
             ESP_LOGI(TAG, "State: INIT");
 
-            // Este código se utiliza para inicializar una memoria no volátil del ESP32,
-            // es útil cuando queremos almacenar información de nuestro sistema entre
-            // apagados, es decir, persistencia.
-            // Un ejemplo típico es almacenar en NVS una ESSID y PASS de una red WIFI establecida
-            // "en caliente" desde una web mínima que levanta el dispositivo en el primer encendido
-            // De momento no lo estamos usando en el proyecto.
+            // Initialize NVS (if needed)
             ret = nvs_flash_init();
             if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
                 ESP_ERROR_CHECK(nvs_flash_erase());
                 ESP_ERROR_CHECK(nvs_flash_init());
             }
 
-            // Crea la tarea sensor como un proceso asociado al CORE 0.
-            // Lo que hace la tarea está en task_sensor.h
-            ESP_LOGI(TAG, "starting sensor task...");
-            task_sensor_args_t task_sensor_args = {&rbuf, 1};
-            system_task_start_in_core(&sys_stf_p1, &task_sensor, TASK_SENSOR, "TASK_SENSOR", TASK_SENSOR_STACK_SIZE, &task_sensor_args, 0, CORE0);
-            ESP_LOGI(TAG, "Done");
+            // Start Sensor task
+            ESP_LOGI(TAG, "Starting Sensor task...");
+            task_sensor_args_t task_sensor_args = {
+                .monitor_buf = &monitor_buf,
+                .checker_buf = &checker_buf,
+                .freq = SENSOR_FREQUENCY,         // Define SENSOR_FREQUENCY in config.h
+                .checker_period = CHECKER_PERIOD  // Define CHECKER_PERIOD in config.h
+            };
+            system_task_start_in_core(&sys_stf_p1, &task_sensor, TASK_SENSOR, "TASK_SENSOR",
+                                      TASK_SENSOR_STACK_SIZE, &task_sensor_args, 0, CORE0);
+            ESP_LOGI(TAG, "Sensor task started");
 
-            // Delay
+            // Start Checker task
+            ESP_LOGI(TAG, "Starting Checker task...");
+            task_checker_args_t task_checker_args = {
+                .checker_buf = &checker_buf,
+                .monitor_buf = &monitor_buf};
+            system_task_start_in_core(&sys_stf_p1, &task_checker, TASK_CHECKER, "TASK_CHECKER",
+                                      TASK_CHECKER_STACK_SIZE, &task_checker_args, 0, CORE0);
+            ESP_LOGI(TAG, "Checker task started");
+
+            // Start Monitor task
+            ESP_LOGI(TAG, "Starting Monitor task...");
+            task_monitor_args_t task_monitor_args = {
+                .monitor_buf = &monitor_buf};
+            system_task_start_in_core(&sys_stf_p1, &task_monitor, TASK_MONITOR, "TASK_MONITOR",
+                                      TASK_MONITOR_STACK_SIZE, &task_monitor_args, 0, CORE1);
+            ESP_LOGI(TAG, "Monitor task started");
+
+            // Delay to ensure tasks start properly
             vTaskDelay(pdMS_TO_TICKS(1000));
 
-            // Crea la tarea monitor como un proceso asociado al CORE 1.
-            // Lo que hace la tarea está en task_monitor.c
-            ESP_LOGI(TAG, "starting monitor task...");
-            task_monitor_args_t task_monitor_args = {&rbuf};
-            system_task_start_in_core(&sys_stf_p1, &task_monitor, TASK_MONITOR, "TASK_MONITOR", TASK_MONITOR_STACK_SIZE, &task_monitor_args, 0, CORE1);
-            ESP_LOGI(TAG, "Done");
-
-            // Esta macro provoca el cambio de estado a SENSOR_LOOP, en este caso.
-            // system.h define una macro para cambiar de estado desde una tarea externa
-            // (la tarea actual es main, la tarea principal de FREERTOS). Es decir,
-            // desde la tarea sensor o monitor podríamos cambiar el estado de la máquina si,
-            // por ejemplo, se detecta un fallo en el proceso.
+            // Transition to SENSOR_LOOP state
             SWITCH_ST(&sys_stf_p1, SENSOR_LOOP);
             STATE_END();
         }
+
         STATE(SENSOR_LOOP) {
             STATE_BEGIN();
-            // La máquina queda en este estado de forma indefinida.
+            // The system remains in this state indefinitely
             ESP_LOGI(TAG, "State: SENSOR_LOOP");
             STATE_END();
         }
+
         STATE_MACHINE_END();
     }
 }

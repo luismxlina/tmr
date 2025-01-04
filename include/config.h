@@ -29,6 +29,10 @@
 #define CORE1 1
 
 // Configuraciones y constantes
+// Sampling frequency in Hz
+#define SENSOR_FREQUENCY 1
+// Number of periods before activating Checker task
+#define CHECKER_PERIOD 10
 
 // Nombre y estados de la máquina
 #define SYS_NAME "STF P1 System"
@@ -56,12 +60,14 @@ enum {
 // Tarea sensor
 SYSTEM_TASK(TASK_SENSOR);
 // definición de los argumentos que requiere la tarea
-typedef struct
-{
-    RingbufHandle_t* rbuf;  // puntero al buffer
-    uint8_t freq;           // frecuencia de muestreo
-    // ...
+
+typedef struct {
+    RingbufHandle_t *monitor_buf;  // Buffer for Monitor task
+    RingbufHandle_t *checker_buf;  // Buffer for Checker task
+    uint8_t freq;                  // Sampling frequency
+    uint16_t checker_period;       // Periods to activate Checker task
 } task_sensor_args_t;
+
 // Timeout de la tarea (ver system_task_stop)
 #define TASK_SENSOR_TIMEOUT_MS 2000
 // Tamaño de la pila de la tarea
@@ -72,7 +78,7 @@ SYSTEM_TASK(TASK_MONITOR);
 // definición de los argumentos que requiere la tarea
 typedef struct
 {
-    RingbufHandle_t* rbuf;  // puntero al buffer
+    RingbufHandle_t *monitor_buf;  // puntero al buffer
     // ...
 } task_monitor_args_t;
 // Timeout de la tarea (ver system_task_stop)
@@ -83,4 +89,17 @@ typedef struct
 // Definición de los pines GPIO
 #define THERM1_POWER_GPIO GPIO_NUM_25
 #define THERM2_POWER_GPIO GPIO_NUM_26
+
+// CHECKER
+SYSTEM_TASK(TASK_CHECKER);
+// Definicón de la los argumentos para Checker
+typedef struct {
+    RingbufHandle_t *checker_buf;  // Input buffer from Sensor task
+    RingbufHandle_t *monitor_buf;  // Output buffer to Monitor task
+} task_checker_args_t;
+
+// Timeout de la tarea (ver system_task_stop)
+#define TASK_CHECKER_TIMEOUT_MS 2000
+// Tamaño de la pila de la tarea
+#define TASK_CHECKER_STACK_SIZE 4096
 #endif

@@ -1,3 +1,5 @@
+// task_sensor.c
+
 #include <esp_event.h>
 #include <esp_log.h>
 #include <esp_system.h>
@@ -11,32 +13,33 @@
 #include <time.h>
 
 #include "config.h"
+#include "data_structures.h"
 #include "therm.h"
 
-static const char* TAG = "STF_P1:task_sensor";
+static const char *TAG = "STF_P1:task_sensor";
 
-// Esta tarea temporiza la lectura de un termistor.
-// Para implementar el periodo de muestreo, se utiliza un semáforo declarado de forma global
-// para poder ser utilizado desde esta rutina de expiración del timer.
-// Cada vez que el temporizador expira, libera el semáforo
-// para que la tarea realice una iteración.
+// Semaphore for timer expiration
 static SemaphoreHandle_t semSample = NULL;
-static void tmrSampleCallback(void* arg) {
+
+// Timer callback function
+static void tmrSampleCallback(void *arg) {
     xSemaphoreGive(semSample);
 }
 
-// Tarea SENSOR
+// Sensor Task
 SYSTEM_TASK(TASK_SENSOR) {
     TASK_BEGIN();
     ESP_LOGI(TAG, "Task Sensor running");
 
-    // Recibe los argumentos de configuración de la tarea y los desempaqueta
-    task_sensor_args_t* ptr_args = (task_sensor_args_t*)TASK_ARGS;
-    RingbufHandle_t* rbuf = ptr_args->rbuf;
+    // Retrieve task arguments
+    task_sensor_args_t *ptr_args = (task_sensor_args_t *)TASK_ARGS;
+    RingbufHandle_t *monitor_buf = ptr_args->monitor_buf;
+    RingbufHandle_t *checker_buf = ptr_args->checker_buf;
     uint8_t frequency = ptr_args->freq;
     uint64_t period_us = 1000000 / frequency;
+    uint8_t N = ptr_args->checker_period;
 
-    // Configuración del termistor
+    // Thermistor configuration
     therm_t t1;
     ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_6, THERM1_POWER_GPIO,
                                SERIES_RESISTANCE, NOMINAL_RESISTANCE,
@@ -46,68 +49,86 @@ SYSTEM_TASK(TASK_SENSOR) {
                                SERIES_RESISTANCE, NOMINAL_RESISTANCE,
                                NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
 
-    // Inicializa el semáforo (la estructura del manejador se definió globalmente)
+    // Initialize semaphore
     semSample = xSemaphoreCreateBinary();
+    if (semSample == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore");
+        TASK_END();
+        return;
+    }
 
-    // Crea y establece una estructura de configuración para el temporizador
+    // Timer configuration
     const esp_timer_create_args_t tmrSampleArgs = {
         .callback = &tmrSampleCallback,
-        .name = "Timer Configuration"};
+        .name = "Sample Timer"};
 
-    // Lanza el temporizador, con el periodo de muestreo recibido como parámetro
+    // Create and start the timer
     esp_timer_handle_t tmrSample;
     ESP_ERROR_CHECK(esp_timer_create(&tmrSampleArgs, &tmrSample));
     ESP_ERROR_CHECK(esp_timer_start_periodic(tmrSample, period_us));
 
-    // Variables para reutilizar en el bucle
-    void* ptr;
+    // Variables
+    uint32_t i = 0;
     float temperature1, temperature2;
-    float voltage1, voltage2;
-    uint16_t lsb1, lsb2;
+    size_t data_size = sizeof(sensor_data_t);
+
+    // Power on T1 once at the beginning
+    therm_power_on(t1);
+    ESP_LOGI(TAG, "T1 powered on");
 
     // Loop
     TASK_LOOP() {
-        // Se bloquea a la espera del semáforo. Si el periodo establecido se retrasa un 20%
-        // el sistema se reinicia por seguridad. Este mecanismo de watchdog software es útil
-        // en tareas periódicas cuyo periodo es conocido.
-        if (xSemaphoreTake(semSample, ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS)) {
-            therm_power_on(t1);
-            therm_power_on(t2);
-
-            // Lectura del sensor
+        // Wait for semaphore with a calculated timeout
+        TickType_t timeout_ticks = ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS;
+        if (xSemaphoreTake(semSample, timeout_ticks)) {
+            // Read T1 temperature (T1 is already powered on)
             temperature1 = therm_read_temperature(t1);
-            voltage1 = therm_read_voltage(t1);
-            lsb1 = therm_read_lsb(t1);
+            ESP_LOGD(TAG, "Read T1: %.2f°C", temperature1);
 
-            temperature2 = therm_read_temperature(t2);
-            voltage2 = therm_read_voltage(t2);
-            lsb2 = therm_read_lsb(t2);
+            // Prepare data for Monitor task
+            sensor_data_t monitor_data = {
+                .source = DATA_SOURCE_SENSOR,
+                .temperature1 = temperature1,
+                .temperature2 = 0.0f,
+                .deviation = 0.0f};
 
-            therm_power_off(t1);
-            therm_power_off(t2);
-
-            // Uso del buffer cíclico entre la tarea monitor y sensor. Ver documentación en ESP-IDF
-            // Pide al RingBuffer espacio para escribir un float.
-            if (xRingbufferSendAcquire(*rbuf, &ptr, 2 * sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
-                // Si falla la reserva de memoria, notifica la pérdida del dato. Esto ocurre cuando
-                // una tarea productora es mucho más rápida que la tarea consumidora. Aquí no debe ocurrir.
-                ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf));
+            // Send to Monitor task
+            if (xRingbufferSend(*monitor_buf, &monitor_data, data_size, pdMS_TO_TICKS(100)) != pdTRUE) {
+                ESP_LOGW(TAG, "Monitor buffer full");
             } else {
-                // Si xRingbufferSendAcquire tiene éxito, podemos escribir el número de bytes solicitados
-                // en el puntero ptr. El espacio asignado estará bloqueado para su lectura hasta que
-                // se notifique que se ha completado la escritura
-                // float* data_ptr = (float*)ptr;
-                // data_ptr[0] = temperature1;
-                // data_ptr[1] = temperature2;
-                // data_ptr[2] = voltage1;
-                // data_ptr[3] = voltage2;
-                // data_ptr[4] = (float)lsb1;
-                // data_ptr[5] = (float)lsb2;
-                memcpy(ptr, &temperature1, sizeof(float));
-                memcpy((float*)ptr + 1, &temperature2, sizeof(float));
+                ESP_LOGD(TAG, "Sent data to Monitor: T1 = %.2f°C", temperature1);
+            }
 
-                // Se notifica que la escritura ha completado.
-                xRingbufferSendComplete(*rbuf, ptr);
+            i++;
+
+            // Every N periods, read T2 and send data to Checker task
+            if (i % N == 0) {
+                // Power on T2
+                therm_power_on(t2);
+                ESP_LOGD(TAG, "T2 powered on");
+
+                // Read T2 temperature
+                temperature2 = therm_read_temperature(t2);
+                ESP_LOGD(TAG, "Read T2: %.2f°C", temperature2);
+
+                // Power off T2 after reading
+                therm_power_off(t2);
+                ESP_LOGD(TAG, "T2 powered off");
+
+                // Prepare data for Checker task
+                sensor_data_t checker_data = {
+                    .source = DATA_SOURCE_SENSOR,  // Indicates data from Sensor task
+                    .temperature1 = temperature1,
+                    .temperature2 = temperature2,
+                    .deviation = 0.0f  // To be calculated by Checker task
+                };
+
+                // Send to Checker task
+                if (xRingbufferSend(*checker_buf, &checker_data, data_size, pdMS_TO_TICKS(100)) != pdTRUE) {
+                    ESP_LOGW(TAG, "Checker buffer full");
+                } else {
+                    ESP_LOGD(TAG, "Sent data to Checker: T1 = %.2f°C, T2 = %.2f°C", temperature1, temperature2);
+                }
             }
         } else {
             ESP_LOGI(TAG, "Watchdog (soft) failed");
@@ -115,9 +136,10 @@ SYSTEM_TASK(TASK_SENSOR) {
         }
     }
 
-    ESP_LOGI(TAG, "Deteniendo la tarea...");
-    // Detención controlada de las estructuras que ha levantado la tarea
+    ESP_LOGI(TAG, "Stopping Sensor task...");
+    // Clean up
     ESP_ERROR_CHECK(esp_timer_stop(tmrSample));
     ESP_ERROR_CHECK(esp_timer_delete(tmrSample));
+    therm_power_off(t1);  // Ensure T1 is powered off when task ends
     TASK_END();
 }
