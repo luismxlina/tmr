@@ -33,7 +33,7 @@ SYSTEM_TASK(TASK_CHECKER) {
     TASK_LOOP() {
         // Wait to receive data from the Checker RingBuffer
         received_data = (sensor_data_t*)xRingbufferReceive(*checker_buf, &item_size, pdMS_TO_TICKS(2000));
-        if (item_size == sizeof(sensor_data_t)) {
+        if (received_data != NULL && item_size == sizeof(sensor_data_t)) {
             // Calculate deviation
             float deviation = fabsf(received_data->temperature1 - received_data->temperature2);
             ESP_LOGI(TAG, "Calculated deviation: %.2f (T1: %.2f, T2: %.2f)",
