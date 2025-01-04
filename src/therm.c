@@ -1,7 +1,7 @@
 #include "therm.h"
 
-#include <driver/adc.h>
 #include <driver/gpio.h>
+#include <esp_adc/adc_oneshot.h>
 #include <math.h>
 
 #include "config.h"
