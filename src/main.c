@@ -41,6 +41,9 @@ void app_main(void) {
     system_create(&sys_stf_p1, SYS_NAME);
     system_register_state(&sys_stf_p1, INIT);
     system_register_state(&sys_stf_p1, SENSOR_LOOP);
+    system_register_state(&sys_stf_p1, NORMAL_MODE);
+    system_register_state(&sys_stf_p1, DEGRADED_MODE);
+    system_register_state(&sys_stf_p1, ERROR);
     system_set_default_state(&sys_stf_p1, INIT);
 
     // Define task handles
@@ -80,7 +83,7 @@ void app_main(void) {
 
             // Start Sensor task
             ESP_LOGI(TAG, "Starting Sensor task...");
-            task_sensor_args_t task_sensor_args = {
+             task_sensor_args_t task_sensor_args = {
                 .monitor_buf = &monitor_buf,
                 .checker_buf = &checker_buf,
                 .freq = SENSOR_FREQUENCY,         // Define SENSOR_FREQUENCY in config.h
@@ -119,6 +122,36 @@ void app_main(void) {
             STATE_BEGIN();
             // The system remains in this state indefinitely
             ESP_LOGI(TAG, "State: SENSOR_LOOP");
+            STATE_END();
+        }
+        
+        STATE(NORMAL_MODE) {
+            STATE_BEGIN();
+            ESP_LOGI(TAG, "State: NORMAL_MODE");
+            // Handle normal mode operations
+            STATE_END();
+        }
+
+        STATE(DEGRADED_MODE) {
+            STATE_BEGIN();
+            ESP_LOGI(TAG, "State: DEGRADED_MODE");
+            // Handle degraded mode operations
+            STATE_END();
+        }
+
+        STATE(ERROR) {
+            STATE_BEGIN();
+            ESP_LOGI(TAG, "State: ERROR");
+
+            // Stop Sensor task
+            ESP_LOGI(TAG, "Stopping Sensor task...");
+            system_task_stop(&sys_stf_p1, &task_sensor, TASK_SENSOR_TIMEOUT_MS);
+
+            // Stop Checker task
+            ESP_LOGI(TAG, "Stopping Checker task...");
+            system_task_stop(&sys_stf_p1, &task_checker, TASK_CHECKER_TIMEOUT_MS);
+
+            // Handle error state operations
             STATE_END();
         }
 

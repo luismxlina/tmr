@@ -35,9 +35,8 @@ SYSTEM_TASK(TASK_CHECKER) {
         received_data = (sensor_data_t*)xRingbufferReceive(*checker_buf, &item_size, portMAX_DELAY);
         if (received_data != NULL && item_size == sizeof(sensor_data_t)) {
             // Calculate deviation
-            float deviation = fabsf(received_data->temperature1 - received_data->temperature2);
-            // ESP_LOGI(TAG, "Calculated deviation: %.2f (T1: %.2f, T2: %.2f)",
-            //  deviation, received_data->temperature1, received_data->temperature2);
+            //float deviation = fabsf(received_data->temperature1 - received_data->temperature2);
+            float deviation = fabsf(received_data->temperature1 - received_data->temperature2) / received_data->temperature1;
 
             // Prepare data to send to Monitor
             checker_data.source = DATA_SOURCE_CHECKER;
@@ -50,10 +49,21 @@ SYSTEM_TASK(TASK_CHECKER) {
                 ESP_LOGW(TAG, "Monitor buffer full (Checker)");
             }
 
+            // Change state based on deviation
+            if (deviation >= 0.20f) {
+                SWITCH_ST_FROM_TASK(ERROR);
+            } else if (deviation > 0.10f) {
+                SWITCH_ST_FROM_TASK(DEGRADED_MODE);
+            } else {
+                SWITCH_ST_FROM_TASK(NORMAL_MODE);
+            }
+
             // Return the item to the Checker RingBuffer
             vRingbufferReturnItem(*checker_buf, (void*)received_data);
-        } else {
-            ESP_LOGW(TAG, "No data received in Checker or incorrect size.");
+        } 
+        
+        else {
+            ESP_LOGW(TAG, "No data received in Checker or incorrect size");
         }
     }
 
