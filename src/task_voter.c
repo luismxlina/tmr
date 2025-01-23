@@ -3,7 +3,6 @@
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/ringbuf.h>
-#include <freertos/semphr.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,12 +22,13 @@ SYSTEM_TASK(TASK_VOTER) {
     task_voter_args_t* ptr_args = (task_voter_args_t*)TASK_ARGS;
     RingbufHandle_t* rbuf_sensor = ptr_args->rbuf_sensor;
     RingbufHandle_t* rbuf_monitor = ptr_args->rbuf_monitor;
+    uint16_t mask = ptr_args->mask;
 
     // Variables para reutilizar en el bucle
     size_t length;
     void* ptr;
-    float temperature1, temperature2, temperature3;
-    float average_temperature;
+    uint16_t lsb1, lsb2, lsb3;
+    uint16_t result;
 
     // Loop
     TASK_LOOP() {
@@ -38,20 +38,29 @@ SYSTEM_TASK(TASK_VOTER) {
         // Si el timeout expira, este puntero es NULL
         if (ptr != NULL) {
             // Lee los valores de los tres termistores
-            float* data_ptr = (float*)ptr;
-            temperature1 = data_ptr[0];
-            temperature2 = data_ptr[1];
-            temperature3 = data_ptr[2];
-            // Calcula el promedio
-            average_temperature = (temperature1 + temperature2 + temperature3) / 3;
+            uint16_t* data_ptr = (uint16_t*)ptr;
+            lsb1 = data_ptr[0];
+            lsb2 = data_ptr[1];
+            lsb3 = data_ptr[2];
+
+            // Aplica la máscara binaria
+            lsb1 &= mask;
+            lsb2 &= mask;
+            lsb3 &= mask;
+
+            // Calcula el valor resultante usando operadores lógicos booleanos
+            result = (lsb1 & lsb2) | (lsb1 & lsb3) | (lsb2 & lsb3);
+
+            // ESP_LOGI(TAG, "Masked values: %u, %u, %u", lsb1, lsb2, lsb3);
+            // ESP_LOGI(TAG, "Result: %u", result);
 
             // Devuelve el item al RingBuffer
             vRingbufferReturnItem(*rbuf_sensor, ptr);
 
-            // Enviar el promedio al RingBuffer de la tarea monitor
-            if (xRingbufferSendAcquire(*rbuf_monitor, &ptr, sizeof(float), pdMS_TO_TICKS(100)) == pdTRUE) {
-                float* avg_ptr = (float*)ptr;
-                *avg_ptr = average_temperature;
+            // Enviar el resultado al RingBuffer de la tarea monitor
+            if (xRingbufferSendAcquire(*rbuf_monitor, &ptr, sizeof(uint16_t), pdMS_TO_TICKS(100)) == pdTRUE) {
+                uint16_t* result_ptr = (uint16_t*)ptr;
+                *result_ptr = result;
                 xRingbufferSendComplete(*rbuf_monitor, ptr);
             } else {
                 ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf_monitor));

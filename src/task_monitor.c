@@ -30,6 +30,7 @@
 
 // propias
 #include "config.h"
+#include "therm.h"
 
 static const char *TAG = "STF_P1:task_monitor";
 
@@ -45,7 +46,8 @@ SYSTEM_TASK(TASK_MONITOR) {
     // Variable para reutilizar en el bucle
     size_t length;
     void *ptr;
-    float average_temperature;
+    uint16_t result;
+    float temperature;
 
     // Loop
     TASK_LOOP() {
@@ -56,11 +58,14 @@ SYSTEM_TASK(TASK_MONITOR) {
 
         // Si el timeout expira, este puntero es NULL
         if (ptr != NULL) {
-            // Lee el valor promedio del votador
-            average_temperature = *((float *)ptr);
+            // Lee el valor resultante del votador
+            result = *((uint16_t *)ptr);
+
+            // Convierte el valor resultante a temperatura en ºC
+            temperature = therm_calculate_temperature(result);
 
             // Muestra el valor promedio
-            ESP_LOGI(TAG, "Average Temperature: %.5fºC", average_temperature);
+            ESP_LOGI(TAG, "Average Temperature: %.5fºC", temperature);
 
             // Devuelve el item al RingBuffer
             vRingbufferReturnItem(*rbuf_monitor, ptr);

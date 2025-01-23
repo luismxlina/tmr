@@ -67,22 +67,28 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Variables para reutilizar en el bucle
     void* ptr;
-    float temperature1, temperature2, temperature3;
-
+    uint16_t lsb1, lsb2, lsb3;
+    float temp1, temp2, temp3;
     // Loop
     TASK_LOOP() {
         // Se bloquea a la espera del semáforo. Si el periodo establecido se retrasa un 20%
         // el sistema se reinicia por seguridad. Este mecanismo de watchdog software es útil
         // en tareas periódicas cuyo periodo es conocido.
         if (xSemaphoreTake(semSample, ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS)) {
-            // Lectura del sensor
-            temperature1 = therm_read_temperature(t1);
-            temperature2 = therm_read_temperature(t2);
-            temperature3 = therm_read_temperature(t3);
+            // Lectura del sensor en binario crudo
+            lsb1 = therm_read_lsb(t1);
+            lsb2 = therm_read_lsb(t2);
+            lsb3 = therm_read_lsb(t3);
+
+            temp1 = therm_read_temperature(t1);
+            temp2 = therm_read_temperature(t2);
+            temp3 = therm_read_temperature(t3);
+
+            ESP_LOGI(TAG, "Temperature 1: %.2f, Temperature 2: %.2f, Temperature 3: %.2f", temp1, temp2, temp3);
 
             // Uso del buffer cíclico entre la tarea sensor y votador. Ver documentación en ESP-IDF
-            // Pide al RingBuffer espacio para escribir tres floats.
-            if (xRingbufferSendAcquire(*rbuf_sensor, &ptr, 3 * sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
+            // Pide al RingBuffer espacio para escribir tres uint16_t.
+            if (xRingbufferSendAcquire(*rbuf_sensor, &ptr, 3 * sizeof(uint16_t), pdMS_TO_TICKS(100)) != pdTRUE) {
                 // Si falla la reserva de memoria, notifica la pérdida del dato. Esto ocurre cuando
                 // una tarea productora es mucho más rápida que la tarea consumidora. Aquí no debe ocurrir.
                 ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf_sensor));
@@ -90,10 +96,10 @@ SYSTEM_TASK(TASK_SENSOR) {
                 // Si xRingbufferSendAcquire tiene éxito, podemos escribir el número de bytes solicitados
                 // en el puntero ptr. El espacio asignado estará bloqueado para su lectura hasta que
                 // se notifique que se ha completado la escritura
-                float* data_ptr = (float*)ptr;
-                data_ptr[0] = temperature1;
-                data_ptr[1] = temperature2;
-                data_ptr[2] = temperature3;
+                uint16_t* data_ptr = (uint16_t*)ptr;
+                data_ptr[0] = lsb1;
+                data_ptr[1] = lsb2;
+                data_ptr[2] = lsb3;
 
                 // Se notifica que la escritura ha completado.
                 xRingbufferSendComplete(*rbuf_sensor, ptr);

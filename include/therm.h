@@ -27,5 +27,6 @@ void therm_power_off(therm_t thermistor);
 // Funciones útiles de conversión
 float _therm_voltage_to_temperature(float voltage, float series_resistance, float nominal_resistance, float nominal_temperature, float beta_coefficient);
 float _therm_lsb_to_voltage(uint16_t lsb);
+float therm_calculate_temperature(uint16_t raw_adc_value);
 
 #endif  // __THERM_H__

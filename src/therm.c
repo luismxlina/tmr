@@ -1,10 +1,14 @@
 #include "therm.h"
 
-#include <driver/adc.h>
 #include <driver/gpio.h>
+#include <esp_adc/adc_oneshot.h>
 #include <math.h>
 
 #include "config.h"
+
+#define A 1.009249522e-03
+#define B 2.378405444e-04
+#define C 2.019202697e-07
 
 // Manejador ADC estático compartido por todos los termistores
 static adc_oneshot_unit_handle_t shared_adc_hdlr = NULL;
@@ -88,4 +92,18 @@ float _therm_voltage_to_temperature(float voltage, float series_resistance, floa
 // Convierte el valor LSB a voltaje
 float _therm_lsb_to_voltage(uint16_t lsb) {
     return (float)(lsb * 3.3f / 4095.0f);
+}
+
+float therm_calculate_temperature(uint16_t raw_adc_value) {
+    // Convertir el valor crudo del ADC a resistencia del termistor
+    float resistance = SERIES_RESISTANCE / ((4095.0 / raw_adc_value) - 1.0);
+
+    // Aplicar la ecuación de Steinhart-Hart
+    float log_r = log(resistance);
+    float temperature_kelvin = 1.0 / (A + B * log_r + C * log_r * log_r * log_r);
+
+    // Convertir de Kelvin a Celsius
+    float temperature_celsius = temperature_kelvin - 273.15;
+
+    return temperature_celsius;
 }

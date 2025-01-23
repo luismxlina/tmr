@@ -91,10 +91,13 @@ void app_main(void) {
             // Delay
             vTaskDelay(pdMS_TO_TICKS(1000));
 
+            // Define la máscara binaria
+            uint16_t mask = 0xFFF0;  // Máscara binaria de ejemplo
+
             // Crea la tarea votador como un proceso asociado al CORE 0.
             // Lo que hace la tarea está en task_votador.c
             ESP_LOGI(TAG, "starting voter task...");
-            task_voter_args_t task_voter_args = {&rbuf_sensor, &rbuf_monitor};
+            task_voter_args_t task_voter_args = {&rbuf_sensor, &rbuf_monitor, mask};
             system_task_start_in_core(&sys_stf_p1, &task_voter, TASK_VOTER, "TASK_VOTER", TASK_VOTER_STACK_SIZE, &task_voter_args, 0, CORE0);
             ESP_LOGI(TAG, "Done");
 

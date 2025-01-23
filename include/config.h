@@ -83,7 +83,7 @@ SYSTEM_TASK(TASK_VOTER);
 typedef struct {
     RingbufHandle_t* rbuf_sensor;   // puntero al buffer para recibir datos del sensor
     RingbufHandle_t* rbuf_monitor;  // puntero al buffer para enviar datos al monitor
-    // ...
+    uint16_t mask;                  // máscara binaria para filtrar bits
 } task_voter_args_t;
 // Timeout de la tarea (ver system_task_stop)
 #define TASK_VOTER_TIMEOUT_MS 2000
