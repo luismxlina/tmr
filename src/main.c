@@ -49,11 +49,14 @@ void app_main(void) {
     // Define manejadores de tareas (de momento sin asignar)
     system_task_t task_sensor;
     system_task_t task_monitor;
+    system_task_t task_voter;
 
-    // Define y crea un buffer cíclico (ver documentación de ESP-IDF)
-    // a modo de buffer thread-safe entre tareas.
-    RingbufHandle_t rbuf;
-    rbuf = xRingbufferCreate(BUFFER_SIZE, BUFFER_TYPE);
+    // Define y crea buffers cíclicos (ver documentación de ESP-IDF)
+    // a modo de buffers thread-safe entre tareas.
+    RingbufHandle_t rbuf_sensor;
+    RingbufHandle_t rbuf_monitor;
+    rbuf_sensor = xRingbufferCreate(BUFFER_SIZE, RINGBUF_TYPE_NOSPLIT);
+    rbuf_monitor = xRingbufferCreate(BUFFER_SIZE, RINGBUF_TYPE_NOSPLIT);
 
     // variable para códigos de retorno
     esp_err_t ret;
@@ -81,8 +84,18 @@ void app_main(void) {
             // Crea la tarea sensor como un proceso asociado al CORE 0.
             // Lo que hace la tarea está en task_sensor.h
             ESP_LOGI(TAG, "starting sensor task...");
-            task_sensor_args_t task_sensor_args = {&rbuf, 1};
+            task_sensor_args_t task_sensor_args = {&rbuf_sensor, 1};
             system_task_start_in_core(&sys_stf_p1, &task_sensor, TASK_SENSOR, "TASK_SENSOR", TASK_SENSOR_STACK_SIZE, &task_sensor_args, 0, CORE0);
+            ESP_LOGI(TAG, "Done");
+
+            // Delay
+            vTaskDelay(pdMS_TO_TICKS(1000));
+
+            // Crea la tarea votador como un proceso asociado al CORE 0.
+            // Lo que hace la tarea está en task_votador.c
+            ESP_LOGI(TAG, "starting voter task...");
+            task_voter_args_t task_voter_args = {&rbuf_sensor, &rbuf_monitor};
+            system_task_start_in_core(&sys_stf_p1, &task_voter, TASK_VOTER, "TASK_VOTER", TASK_VOTER_STACK_SIZE, &task_voter_args, 0, CORE0);
             ESP_LOGI(TAG, "Done");
 
             // Delay
@@ -91,7 +104,7 @@ void app_main(void) {
             // Crea la tarea monitor como un proceso asociado al CORE 1.
             // Lo que hace la tarea está en task_monitor.c
             ESP_LOGI(TAG, "starting monitor task...");
-            task_monitor_args_t task_monitor_args = {&rbuf};
+            task_monitor_args_t task_monitor_args = {&rbuf_monitor};
             system_task_start_in_core(&sys_stf_p1, &task_monitor, TASK_MONITOR, "TASK_MONITOR", TASK_MONITOR_STACK_SIZE, &task_monitor_args, 0, CORE1);
             ESP_LOGI(TAG, "Done");
 

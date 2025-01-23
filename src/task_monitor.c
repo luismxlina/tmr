@@ -17,8 +17,9 @@
 #include <sys/time.h>
 #include <time.h>
 
-// freerqtos
+// freertos
 #include <freertos/FreeRTOS.h>
+#include <freertos/ringbuf.h>
 #include <freertos/semphr.h>
 
 // esp
@@ -39,33 +40,30 @@ SYSTEM_TASK(TASK_MONITOR) {
 
     // Recibe los argumentos de configuración de la tarea y los desempaqueta
     task_monitor_args_t *ptr_args = (task_monitor_args_t *)TASK_ARGS;
-    RingbufHandle_t *rbuf = ptr_args->rbuf;
+    RingbufHandle_t *rbuf_monitor = ptr_args->rbuf_monitor;
 
-    // variables para reutilizar en el bucle
+    // Variable para reutilizar en el bucle
     size_t length;
     void *ptr;
-    float v1;
-    float v2;
+    float average_temperature;
 
     // Loop
     TASK_LOOP() {
         // Se bloquea en espera de que haya algo que leer en RingBuffer.
         // Tiene un timeout de 1 segundo para no bloquear indefinidamente la tarea,
         // pero si expira vuelve aquí sin consecuencias
-        ptr = xRingbufferReceive(*rbuf, &length, pdMS_TO_TICKS(1000));
+        ptr = xRingbufferReceive(*rbuf_monitor, &length, pdMS_TO_TICKS(1000));
 
         // Si el timeout expira, este puntero es NULL
         if (ptr != NULL) {
-            // Este código se puede usar para notificar cuántos bytes ha recibido del
-            // sensor a través de la estructura RingBuffer.
-            // ESP_LOGI(TAG,"Recibidos: %d bytes", length);
-            v1 = *((float *)ptr);
-            v2 = *((float *)ptr + 1);
+            // Lee el valor promedio del votador
+            average_temperature = *((float *)ptr);
 
-            float deviation = fabsf((v1 - v2) / v2 * 100.0f);
+            // Muestra el valor promedio
+            ESP_LOGI(TAG, "Average Temperature: %.5fºC", average_temperature);
 
-            ESP_LOGI(TAG, "T1:%.5fºC, (%.2f%%)", v1, deviation);
-            vRingbufferReturnItem(*rbuf, ptr);
+            // Devuelve el item al RingBuffer
+            vRingbufferReturnItem(*rbuf_monitor, ptr);
         } else {
             ESP_LOGW(TAG, "Esperando datos ...");
         }

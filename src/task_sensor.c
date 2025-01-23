@@ -32,19 +32,25 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Recibe los argumentos de configuración de la tarea y los desempaqueta
     task_sensor_args_t* ptr_args = (task_sensor_args_t*)TASK_ARGS;
-    RingbufHandle_t* rbuf = ptr_args->rbuf;
+    RingbufHandle_t* rbuf_sensor = ptr_args->rbuf_sensor;
     uint8_t frequency = ptr_args->freq;
     uint64_t period_us = 1000000 / frequency;
 
-    // Configuración del termistor
-    therm_t t1;
-    ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_6, THERM1_POWER_GPIO,
+    // Configuración de los termistores
+    therm_t t1, t2, t3;
+    ESP_ERROR_CHECK(therm_init(&t1, ADC_CHANNEL_5, THERM1_POWER_GPIO,
                                SERIES_RESISTANCE, NOMINAL_RESISTANCE,
                                NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
-    therm_t t2;
-    ESP_ERROR_CHECK(therm_init(&t2, ADC_CHANNEL_7, THERM2_POWER_GPIO,
+    ESP_ERROR_CHECK(therm_init(&t2, ADC_CHANNEL_6, THERM2_POWER_GPIO,
                                SERIES_RESISTANCE, NOMINAL_RESISTANCE,
                                NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+    ESP_ERROR_CHECK(therm_init(&t3, ADC_CHANNEL_7, THERM3_POWER_GPIO,
+                               SERIES_RESISTANCE, NOMINAL_RESISTANCE,
+                               NOMINAL_TEMPERATURE, BETA_COEFFICIENT));
+
+    therm_power_on(t1);
+    therm_power_on(t2);
+    therm_power_on(t3);
 
     // Inicializa el semáforo (la estructura del manejador se definió globalmente)
     semSample = xSemaphoreCreateBinary();
@@ -61,9 +67,7 @@ SYSTEM_TASK(TASK_SENSOR) {
 
     // Variables para reutilizar en el bucle
     void* ptr;
-    float temperature1, temperature2;
-    float voltage1, voltage2;
-    uint16_t lsb1, lsb2;
+    float temperature1, temperature2, temperature3;
 
     // Loop
     TASK_LOOP() {
@@ -71,43 +75,28 @@ SYSTEM_TASK(TASK_SENSOR) {
         // el sistema se reinicia por seguridad. Este mecanismo de watchdog software es útil
         // en tareas periódicas cuyo periodo es conocido.
         if (xSemaphoreTake(semSample, ((1000 / frequency) * 1.2) / portTICK_PERIOD_MS)) {
-            therm_power_on(t1);
-            therm_power_on(t2);
-
             // Lectura del sensor
             temperature1 = therm_read_temperature(t1);
-            voltage1 = therm_read_voltage(t1);
-            lsb1 = therm_read_lsb(t1);
-
             temperature2 = therm_read_temperature(t2);
-            voltage2 = therm_read_voltage(t2);
-            lsb2 = therm_read_lsb(t2);
+            temperature3 = therm_read_temperature(t3);
 
-            therm_power_off(t1);
-            therm_power_off(t2);
-
-            // Uso del buffer cíclico entre la tarea monitor y sensor. Ver documentación en ESP-IDF
-            // Pide al RingBuffer espacio para escribir un float.
-            if (xRingbufferSendAcquire(*rbuf, &ptr, 2 * sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
+            // Uso del buffer cíclico entre la tarea sensor y votador. Ver documentación en ESP-IDF
+            // Pide al RingBuffer espacio para escribir tres floats.
+            if (xRingbufferSendAcquire(*rbuf_sensor, &ptr, 3 * sizeof(float), pdMS_TO_TICKS(100)) != pdTRUE) {
                 // Si falla la reserva de memoria, notifica la pérdida del dato. Esto ocurre cuando
                 // una tarea productora es mucho más rápida que la tarea consumidora. Aquí no debe ocurrir.
-                ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf));
+                ESP_LOGI(TAG, "Buffer lleno. Espacio disponible: %d", xRingbufferGetCurFreeSize(*rbuf_sensor));
             } else {
                 // Si xRingbufferSendAcquire tiene éxito, podemos escribir el número de bytes solicitados
                 // en el puntero ptr. El espacio asignado estará bloqueado para su lectura hasta que
                 // se notifique que se ha completado la escritura
-                // float* data_ptr = (float*)ptr;
-                // data_ptr[0] = temperature1;
-                // data_ptr[1] = temperature2;
-                // data_ptr[2] = voltage1;
-                // data_ptr[3] = voltage2;
-                // data_ptr[4] = (float)lsb1;
-                // data_ptr[5] = (float)lsb2;
-                memcpy(ptr, &temperature1, sizeof(float));
-                memcpy((float*)ptr + 1, &temperature2, sizeof(float));
+                float* data_ptr = (float*)ptr;
+                data_ptr[0] = temperature1;
+                data_ptr[1] = temperature2;
+                data_ptr[2] = temperature3;
 
                 // Se notifica que la escritura ha completado.
-                xRingbufferSendComplete(*rbuf, ptr);
+                xRingbufferSendComplete(*rbuf_sensor, ptr);
             }
         } else {
             ESP_LOGI(TAG, "Watchdog (soft) failed");
